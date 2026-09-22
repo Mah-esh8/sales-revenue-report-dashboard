@@ -131,11 +131,7 @@ git remote add origin <your-repo-url>
 git push -u origin main
 ```
 
-Note: this repo doesn't use a `.gitignore`, so if you create a `.env` file
-in this folder before pushing, it **will** be committed and visible in your
-GitHub repo. Either keep real credentials out of `.env` when you push, or
-set them as repo/deployment secrets instead if the dashboard needs to run
-somewhere other than your own machine.
+The repository includes a `.gitignore` that excludes `.env` and other local or generated files. Use `.env.example` as the template for local MySQL credentials, and never commit real credentials to GitHub.
 
 ## Dashboard features
 

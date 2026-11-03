@@ -1,11 +1,6 @@
-"""
-dashboard/app.py
-------------------
-Streamlit + Plotly dashboard for the Sales & Revenue Analysis project.
-Reads live from MySQL through SQLAlchemy (not from the CSV directly),
-so it reflects whatever is currently in the sales_data table.
+"""Streamlit + Plotly dashboard backed by MySQL.
 
-Run with:
+Run from the project root:
     streamlit run dashboard/app.py
 """
 
@@ -16,8 +11,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# Allow importing etl/db_connection.py when Streamlit is launched from the
-# project root (streamlit run dashboard/app.py).
 sys.path.append(str(Path(__file__).resolve().parent.parent / "etl"))
 from db_connection import get_engine  # noqa: E402
 
@@ -27,7 +20,10 @@ st.set_page_config(page_title="Sales & Revenue Dashboard", layout="wide")
 @st.cache_data(ttl=300)
 def load_data() -> pd.DataFrame:
     engine = get_engine()
-    df = pd.read_sql("SELECT * FROM sales_data", engine)
+    try:
+        df = pd.read_sql("SELECT * FROM sales_data", engine)
+    finally:
+        engine.dispose()
     df["order_date"] = pd.to_datetime(df["order_date"])
     return df
 
@@ -38,9 +34,9 @@ try:
     df = load_data()
 except Exception as e:
     st.error(
-        "Couldn't connect to MySQL. Make sure the database is running, "
-        "`.env` has the right credentials, and the ETL steps have been run "
-        "(see README). \n\nDetails: " + str(e)
+        "Couldn't connect to MySQL. Check that the database is running, "
+        "the .env file contains the correct credentials, and the ETL steps are complete. "
+        "\\n\\nDetails: " + str(e)
     )
     st.stop()
 
@@ -48,19 +44,31 @@ if df.empty:
     st.warning("Connected to MySQL, but sales_data has no rows yet. Run the ETL load step first.")
     st.stop()
 
-# ---------------- Sidebar filters ----------------
 st.sidebar.header("Filters")
-regions = st.sidebar.multiselect("Region", sorted(df["region"].unique()), default=list(df["region"].unique()))
-products = st.sidebar.multiselect("Product", sorted(df["product"].unique()), default=list(df["product"].unique()))
-date_min, date_max = df["order_date"].min(), df["order_date"].max()
+regions = st.sidebar.multiselect(
+    "Region", sorted(df["region"].unique()), default=list(df["region"].unique())
+)
+products = st.sidebar.multiselect(
+    "Product", sorted(df["product"].unique()), default=list(df["product"].unique())
+)
+date_min, date_max = df["order_date"].min().date(), df["order_date"].max().date()
 date_range = st.sidebar.date_input("Order date range", (date_min, date_max))
 
 filtered = df[df["region"].isin(regions) & df["product"].isin(products)]
-if isinstance(date_range, tuple) and len(date_range) == 2:
-    start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-    filtered = filtered[(filtered["order_date"] >= start) & (filtered["order_date"] <= end)]
+if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+    start = pd.Timestamp(date_range[0])
+    # Exclusive next-day boundary includes every row on the selected end date.
+    end_exclusive = pd.Timestamp(date_range[1]) + pd.Timedelta(days=1)
+    filtered = filtered[
+        (filtered["order_date"] >= start) & (filtered["order_date"] < end_exclusive)
+    ]
+elif isinstance(date_range, (tuple, list)) and len(date_range) == 1:
+    selected_day = pd.Timestamp(date_range[0])
+    filtered = filtered[
+        (filtered["order_date"] >= selected_day)
+        & (filtered["order_date"] < selected_day + pd.Timedelta(days=1))
+    ]
 
-# ---------------- KPI row ----------------
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Revenue", f"₹{filtered['total_sales'].sum():,.0f}")
 col2.metric("Total Orders", f"{len(filtered):,}")
@@ -69,8 +77,6 @@ avg_order = filtered["total_sales"].mean() if len(filtered) else 0
 col4.metric("Avg Order Value", f"₹{avg_order:,.0f}")
 
 st.divider()
-
-# ---------------- Charts ----------------
 left, right = st.columns(2)
 
 with left:

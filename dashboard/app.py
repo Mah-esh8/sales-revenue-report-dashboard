@@ -36,7 +36,7 @@ except Exception as e:
     st.error(
         "Couldn't connect to MySQL. Check that the database is running, "
         "the .env file contains the correct credentials, and the ETL steps are complete. "
-        "\\n\\nDetails: " + str(e)
+        "\n\nDetails: " + str(e)
     )
     st.stop()
 

@@ -1,33 +1,25 @@
-"""
-etl/db_connection.py
----------------------
-Single shared place to build a SQLAlchemy engine for MySQL, so both the
-loader script and the Streamlit dashboard connect the same way.
-
-Reads credentials from environment variables (loaded from a .env file
-via python-dotenv), so no password ever needs to be hard-coded or
-committed to GitHub.
-"""
+"""Shared SQLAlchemy engine factory for ETL and dashboard access."""
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, URL
 
-load_dotenv()  # reads .env in the project root if present
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 
-def get_engine() -> Engine:
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "3306")
-    user = os.getenv("DB_USER", "root")
-    password = os.getenv("DB_PASSWORD", "")
-    database = os.getenv("DB_NAME", "sales_dashboard")
-
-    url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-    # pool_pre_ping avoids "MySQL server has gone away" on idle connections,
-    # which matters for a dashboard that stays open in a browser tab.
-    # local_infile=1 is required client-side (in addition to the server-side
-    # `SET GLOBAL local_infile = 1`) for LOAD DATA LOCAL INFILE to work.
-    return create_engine(url, pool_pre_ping=True, connect_args={"local_infile": 1})
+def get_engine(*, local_infile: bool = False) -> Engine:
+    """Create a MySQL engine; opt in to LOCAL INFILE only for bulk loading."""
+    url = URL.create(
+        drivername="mysql+pymysql",
+        username=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        database=os.getenv("DB_NAME", "sales_dashboard"),
+    )
+    connect_args = {"local_infile": 1} if local_infile else {}
+    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)

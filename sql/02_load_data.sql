@@ -15,7 +15,7 @@ LOAD DATA LOCAL INFILE '/absolute/path/to/cleaned_sales_data.csv'
 INTO TABLE sales_data_staging
 FIELDS TERMINATED BY ','
 OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 ROWS
 (order_id, product, region, sales_rep, quantity, price, order_date, total_sales);
 

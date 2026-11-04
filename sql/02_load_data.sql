@@ -1,44 +1,36 @@
--- =============================================================
--- 02_load_data.sql
--- Loads the cleaned CSV into MySQL using LOAD DATA INFILE.
+-- Manual reference for a safe LOCAL INFILE import.
+-- Replace the path with the absolute path on the MySQL client machine.
+-- Recommended: run python etl/load_to_mysql.py instead; it stages and
+-- validates the CSV before replacing the live rows.
 --
--- IMPORTANT: replace the file path below with the ABSOLUTE path to
--- data/processed/cleaned_sales_data.csv on your machine. MySQL requires
--- an absolute path (or LOCAL INFILE, see note below).
---
--- If you get "The MySQL server is running with the --secure-file-priv
--- option" -> either copy the CSV into the directory that
--- `SHOW VARIABLES LIKE 'secure_file_priv';` points to, or use the
--- LOAD DATA LOCAL INFILE variant further down.
--- =============================================================
+-- LOCAL INFILE must be allowed by both server and client configuration.
+-- Do not change a shared/production server-wide setting casually.
 
 USE sales_dashboard;
 
--- Standard server-side load (file must be readable by the MySQL server process)
-LOAD DATA INFILE '/absolute/path/to/sales-revenue-dashboard/data/processed/cleaned_sales_data.csv'
-INTO TABLE sales_data
+DROP TEMPORARY TABLE IF EXISTS sales_data_staging;
+CREATE TEMPORARY TABLE sales_data_staging LIKE sales_data;
+
+LOAD DATA LOCAL INFILE '/absolute/path/to/cleaned_sales_data.csv'
+INTO TABLE sales_data_staging
 FIELDS TERMINATED BY ','
 OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 ROWS
 (order_id, product, region, sales_rep, quantity, price, order_date, total_sales);
 
--- ---------------------------------------------------------------
--- Alternative: LOAD DATA LOCAL INFILE
--- Use this if the CSV lives on the machine running the mysql client
--- rather than on the DB server itself (common when learning locally).
--- Requires: local_infile=1 on both the client and the server.
---   SET GLOBAL local_infile = 1;
--- and connecting with `mysql --local-infile=1 ...`
--- ---------------------------------------------------------------
--- LOAD DATA LOCAL INFILE '/absolute/path/to/sales-revenue-dashboard/data/processed/cleaned_sales_data.csv'
--- INTO TABLE sales_data
--- FIELDS TERMINATED BY ','
--- OPTIONALLY ENCLOSED BY '"'
--- LINES TERMINATED BY '\n'
--- IGNORE 1 ROWS
--- (order_id, product, region, sales_rep, quantity, price, order_date, total_sales);
+-- Inspect before publishing.
+SELECT COUNT(*) AS staged_rows FROM sales_data_staging;
+SELECT * FROM sales_data_staging LIMIT 5;
 
--- Quick sanity check after loading
-SELECT COUNT(*) AS rows_loaded FROM sales_data;
-SELECT * FROM sales_data LIMIT 5;
+-- Execute only after confirming the staged data. sales_data is InnoDB.
+START TRANSACTION;
+DELETE FROM sales_data;
+INSERT INTO sales_data
+    (order_id, product, region, sales_rep, quantity, price, order_date, total_sales)
+SELECT
+    order_id, product, region, sales_rep, quantity, price, order_date, total_sales
+FROM sales_data_staging;
+COMMIT;
+
+SELECT COUNT(*) AS rows_published FROM sales_data;
